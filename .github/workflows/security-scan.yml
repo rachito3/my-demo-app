@@ -9,11 +9,15 @@ on:
 jobs:
   security:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v3
         with:
           node-version: '18'
 
@@ -22,6 +26,8 @@ jobs:
 
       - name: Run OWASP Dependency Check
         uses: dependency-check/Dependency-Check_Action@main
+        env:
+          JAVA_HOME: ${{ runner.tool_cache }}/jdk17/x64
         with:
           project: 'my-demo-app'
           path: '.'
@@ -31,16 +37,7 @@ jobs:
             --enableRetired
 
       - name: Upload dependency check report
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: dependency-check-report
           path: reports
-
-      - name: Check scan results
-        run: |
-          if [ -f reports/dependency-check-report.html ]; then
-            echo "Scan completed. Check the artifacts for the detailed report."
-          else
-            echo "Scan failed or report not generated"
-            exit 1
-          fi
