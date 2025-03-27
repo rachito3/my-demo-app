@@ -9,9 +9,6 @@ on:
 jobs:
   security:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
     
     steps:
       - uses: actions/checkout@v3
@@ -24,20 +21,20 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run OWASP Dependency Check
-        uses: dependency-check/Dependency-Check_Action@main
-        env:
-          JAVA_HOME: ${{ runner.tool_cache }}/jdk17/x64
+      - name: Setup Java JDK
+        uses: actions/setup-java@v3
         with:
-          project: 'my-demo-app'
-          path: '.'
-          format: 'HTML'
-          args: >
-            --failOnCVSS 7
-            --enableRetired
+          java-version: '17'
+          distribution: 'temurin'
 
-      - name: Upload dependency check report
-        uses: actions/upload-artifact@v3
+      - name: OWASP Dependency Check
+        run: |
+          wget https://github.com/jeremylong/DependencyCheck/releases/download/v8.4.2/dependency-check-8.4.2-release.zip
+          unzip dependency-check-8.4.2-release.zip
+          ./dependency-check/bin/dependency-check.sh --scan ./ --format HTML --out ./reports --failOnCVSS 7
+
+      - uses: actions/upload-artifact@v3
+        if: always()
         with:
           name: dependency-check-report
-          path: reports
+          path: reports/
