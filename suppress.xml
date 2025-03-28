@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+   <!-- Add suppressions for known false positives -->
+   <suppress>
+      <notes>Example suppression</notes>
+      <gav regex="true">^org\.example:mylib:.*$</gav>
+      <cve>CVE-2020-XXXXX</cve>
+   </suppress>
+</suppressions>
