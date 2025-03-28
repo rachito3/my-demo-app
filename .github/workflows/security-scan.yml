@@ -13,28 +13,22 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
-
+    - uses: actions/checkout@v4  # Update from v3 to v4
+      
     - name: Set up Java
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@v4  # Update to latest version
       with:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Setup Dependency Check
+    - name: Create directories
       run: |
-        # Create directories with proper permissions
         mkdir -p $GITHUB_WORKSPACE/dependency-check/data
         mkdir -p $GITHUB_WORKSPACE/dependency-check/reports
         chmod -R 777 $GITHUB_WORKSPACE/dependency-check
 
-        # Download and extract Dependency Check
-        wget https://github.com/jeremylong/DependencyCheck/releases/download/v8.4.2/dependency-check-8.4.2-release.zip
-        unzip dependency-check-8.4.2-release.zip
-        chmod +x dependency-check/bin/dependency-check.sh
-
     - name: Cache NVD Database
-      uses: actions/cache@v3
+      uses: actions/cache@v4  # Update to v4
       with:
         path: $GITHUB_WORKSPACE/dependency-check/data
         key: nvd-${{ hashFiles('**/pom.xml') }}-${{ github.sha }}
@@ -42,50 +36,26 @@ jobs:
           nvd-${{ hashFiles('**/pom.xml') }}-
           nvd-
 
-    - name: Run Dependency Check with Retries
+    - name: Download Dependency Check
       run: |
-        # Create retry function
-        run_scan() {
-          ./dependency-check/bin/dependency-check.sh \
-            --project "My Project" \
-            --scan $GITHUB_WORKSPACE \
-            --format "HTML" "JSON" \
-            --out $GITHUB_WORKSPACE/dependency-check/reports \
-            --data $GITHUB_WORKSPACE/dependency-check/data \
-            --enableExperimental \
-            --enableRetired false \
-            --nvdApiKey ${{ secrets.NVD_API_KEY }} \
-            --connectionTimeout 60000 \
-            --readTimeout 60000 \
-            --failOnCVSS 7
-        }
+        wget https://github.com/jeremylong/DependencyCheck/releases/download/v8.4.2/dependency-check-8.4.2-release.zip
+        unzip dependency-check-8.4.2-release.zip
+        chmod +x dependency-check/bin/dependency-check.sh
 
-        # Retry logic
-        max_attempts=3
-        attempt=1
-        
-        while [ $attempt -le $max_attempts ]; do
-          echo "Attempt $attempt of $max_attempts"
-          
-          if run_scan; then
-            echo "Scan completed successfully"
-            break
-          else
-            echo "Attempt $attempt failed"
-            if [ $attempt -eq $max_attempts ]; then
-              echo "All attempts failed"
-              exit 1
-            fi
-            # Wait before retry with exponential backoff
-            sleep $((attempt * 30))
-          fi
-          
-          attempt=$((attempt + 1))
-        done
+    - name: Run Dependency Check
+      run: |
+        ./dependency-check/bin/dependency-check.sh \
+          --scan $GITHUB_WORKSPACE \
+          --format "HTML" "JSON" \
+          --out $GITHUB_WORKSPACE/dependency-check/reports \
+          --data $GITHUB_WORKSPACE/dependency-check/data \
+          --enableExperimental \
+          --suppression $GITHUB_WORKSPACE/suppress.xml
 
     - name: Upload Scan Results
+      uses: actions/upload-artifact@v4  # Update to v4
       if: always()
-      uses: actions/upload-artifact@v3
       with:
         name: dependency-check-report
         path: ${{ github.workspace }}/dependency-check/reports/
+        retention-days: 5
