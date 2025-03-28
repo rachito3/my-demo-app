@@ -5,44 +5,87 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  schedule:
+    - cron: '0 0 * * *'  # Run daily at midnight
 
 jobs:
-  security:
+  security-scan:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - uses: actions/checkout@v3
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
+    - name: Set up Java
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '17'
 
-      - name: Install dependencies
-        run: npm install
+    - name: Setup Dependency Check
+      run: |
+        # Create directories with proper permissions
+        mkdir -p $GITHUB_WORKSPACE/dependency-check/data
+        mkdir -p $GITHUB_WORKSPACE/dependency-check/reports
+        chmod -R 777 $GITHUB_WORKSPACE/dependency-check
 
-      - name: Setup Java JDK
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
+        # Download and extract Dependency Check
+        wget https://github.com/jeremylong/DependencyCheck/releases/download/v8.4.2/dependency-check-8.4.2-release.zip
+        unzip dependency-check-8.4.2-release.zip
+        chmod +x dependency-check/bin/dependency-check.sh
 
-      - name: OWASP Dependency Check
-        run: |
-          wget https://github.com/jeremylong/DependencyCheck/releases/download/v8.4.2/dependency-check-8.4.2-release.zip
-          unzip dependency-check-8.4.2-release.zip
-          ./dependency-check/bin/dependency-check.sh --scan ./ --format HTML --out ./reports --failOnCVSS 7
+    - name: Cache NVD Database
+      uses: actions/cache@v3
+      with:
+        path: $GITHUB_WORKSPACE/dependency-check/data
+        key: nvd-${{ hashFiles('**/pom.xml') }}-${{ github.sha }}
+        restore-keys: |
+          nvd-${{ hashFiles('**/pom.xml') }}-
+          nvd-
 
-      - name: Store security report
-        if: always()
-        run: |
-          mkdir -p ~/security-reports
-          cp -r ./reports/* ~/security-reports/ || true
+    - name: Run Dependency Check with Retries
+      run: |
+        # Create retry function
+        run_scan() {
+          ./dependency-check/bin/dependency-check.sh \
+            --project "My Project" \
+            --scan $GITHUB_WORKSPACE \
+            --format "HTML" "JSON" \
+            --out $GITHUB_WORKSPACE/dependency-check/reports \
+            --data $GITHUB_WORKSPACE/dependency-check/data \
+            --enableExperimental \
+            --enableRetired false \
+            --nvdApiKey ${{ secrets.NVD_API_KEY }} \
+            --connectionTimeout 60000 \
+            --readTimeout 60000 \
+            --failOnCVSS 7
+        }
 
-      - name: Upload security report
-        if: always()
-        uses: actions/upload-artifact@main
-        with:
-          name: dependency-check-report
-          path: ~/security-reports
+        # Retry logic
+        max_attempts=3
+        attempt=1
+        
+        while [ $attempt -le $max_attempts ]; do
+          echo "Attempt $attempt of $max_attempts"
+          
+          if run_scan; then
+            echo "Scan completed successfully"
+            break
+          else
+            echo "Attempt $attempt failed"
+            if [ $attempt -eq $max_attempts ]; then
+              echo "All attempts failed"
+              exit 1
+            fi
+            # Wait before retry with exponential backoff
+            sleep $((attempt * 30))
+          fi
+          
+          attempt=$((attempt + 1))
+        done
+
+    - name: Upload Scan Results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: dependency-check-report
+        path: ${{ github.workspace }}/dependency-check/reports/
